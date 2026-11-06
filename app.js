@@ -2,6 +2,7 @@
 
 const app = document.querySelector("#app");
 const topActions = document.querySelector("#top-actions");
+const pageNavigation = document.querySelector("#page-navigation");
 const saveProfileControls = document.querySelector("#save-profile-controls");
 const live = document.querySelector("#live");
 
@@ -26,7 +27,12 @@ let writerCursor = 0;
 let comparisonColorOverrides = {};
 const meaningComparisonCache = new Map();
 
-const validFilters = new Set(["all", "direct", "dictionary", "builtin"]);
+const navigationIcons = {
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  book: '<path d="M12 6v14M3 4.5h5.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 3.5-3.5H21v13h-5.5A3.5 3.5 0 0 0 12 21a3.5 3.5 0 0 0-3.5-3.5H3z"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM7 3v6h9V3M7 21v-7h10v7"/>',
+  settings: '<path d="m10 3-.5 2.4-1.8 1-2.3-.8-2 3.4 1.8 1.6v2.1l-1.8 1.6 2 3.4 2.3-.8 1.8 1 .5 2.4h4l.5-2.4 1.8-1 2.3.8 2-3.4-1.8-1.6v-2.1l1.8-1.6-2-3.4-2.3.8-1.8-1L14 3Z"/><circle cx="12" cy="11.65" r="2.65"/>',
+};
 const atlasColumns = 16;
 const personalStorageKey = "alien-full-dictionary:personal-meanings:v2";
 const legacyPersonalStorageKey = "alien-full-dictionary:personal-meanings:v1";
@@ -683,7 +689,7 @@ function chooseSaveFile() {
 function defaultState() {
   return {
     view: "home",
-    filter: "all",
+    openCategories: [],
     undecipheredOnly: false,
     atoms: [],
     showSingleNumerals: false,
@@ -728,7 +734,11 @@ function normalizedState(raw) {
   }
   return {
     view: "home",
-    filter: validFilters.has(state.filter) ? state.filter : "all",
+    openCategories: Array.isArray(state.openCategories)
+      ? state.openCategories.filter((index) => (
+        Number.isInteger(index) && index >= 0 && index <= data.dictionary_categories.length
+      ))
+      : [],
     undecipheredOnly: state.undecipheredOnly === true && saveProfiles.length > 0,
     scrollY,
     depth,
@@ -765,7 +775,7 @@ function goHome() {
     replaceCurrent({ scrollY: 0 }, false);
     return;
   }
-  navigate({ view: "home", filter: "all" });
+  navigate({ view: "home" });
 }
 
 function goComponents() {
@@ -783,14 +793,49 @@ function goWriter() {
   navigate({ view: "writer" });
 }
 
+function addNavigationIcon(control, icon) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = navigationIcons[icon];
+  control.classList.add("nav-icon-button");
+  control.prepend(svg);
+}
+
+function navigationGroup(label, icon, controls, active = false) {
+  const dropdown = document.createElement("details");
+  dropdown.className = "nav-dropdown";
+  dropdown.name = "top-navigation";
+  const trigger = document.createElement("summary");
+  trigger.className = "nav-button";
+  trigger.textContent = label;
+  trigger.dataset.active = String(active);
+  addNavigationIcon(trigger, icon);
+
+  const options = document.createElement("div");
+  options.className = "nav-options";
+  options.append(...controls);
+  options.addEventListener("click", (event) => {
+    if (event.target.closest("button")) {
+      dropdown.open = false;
+      if (dropdown.isConnected) trigger.focus();
+    }
+  });
+  dropdown.append(trigger, options);
+  return dropdown;
+}
+
 function renderTopActions() {
   topActions.replaceChildren();
   if (!currentState) return;
+  const dictionary = button("游戏内字典", "nav-button", goHome);
+  dictionary.setAttribute("aria-pressed", String(currentState.view === "home"));
   const componentSearch = button("按部件找字", "nav-button", goComponents);
   componentSearch.setAttribute("aria-pressed", String(currentState.view === "components"));
   const meaningSearch = button("按释义找字", "nav-button", goMeaningSearch);
   meaningSearch.setAttribute("aria-pressed", String(currentState.view === "meanings"));
-  const writer = button("外星写作", "nav-button", goWriter);
+  const writer = button("写作", "nav-button", goWriter);
+  addNavigationIcon(writer, "book");
   writer.setAttribute("aria-pressed", String(currentState.view === "writer"));
   const importButton = button("导入存档", "nav-button", chooseSaveFile);
   importButton.disabled = importingSaves;
@@ -816,12 +861,15 @@ function renderTopActions() {
   compare.disabled = saveProfiles.length < 2;
   compare.title = saveProfiles.length < 2 ? "导入至少两个存档后，可对比释义" : "分两排显示所选两个存档的释义";
   compare.setAttribute("aria-pressed", String(compareSaves));
-  topActions.append(componentSearch, meaningSearch, writer, importButton, compare, visibility, highlight);
-  if (currentState.view !== "home") {
-    const back = button("← 上一页", "nav-button", goBack);
-    back.disabled = currentState.depth === 0;
-    topActions.append(back, button("返回首页", "nav-button", goHome));
-  }
+  topActions.append(
+    navigationGroup("找字", "search", [dictionary, componentSearch, meaningSearch], currentState.view !== "writer" && currentState.view !== "detail"),
+    writer,
+    navigationGroup("存档", "save", [importButton, compare], compareSaves),
+    navigationGroup("设置", "settings", [visibility, highlight], showPersonalMeanings || highlightUndeciphered),
+  );
+  pageNavigation.hidden = currentState.view === "home" || currentState.depth === 0;
+  pageNavigation.replaceChildren();
+  if (!pageNavigation.hidden) pageNavigation.append(button("← 上一页", "clear-button", goBack));
   renderSaveProfileControls();
 }
 
@@ -920,14 +968,7 @@ function makeGlyphCard(index) {
   if (entries[index].not_word) card.classList.add("not-word");
   if (entries[index].startup_only) card.classList.add("startup-only");
   markGlyphContainer(card, index);
-  card.setAttribute(
-    "aria-label",
-    entries[index].builtin_only
-      ? "查看内置字典词条"
-      : entries[index].startup_only
-      ? "查看这个仅从启动时左页可达的字的到达路径"
-      : (entries[index].not_word ? "查看这个非正式字的到达路径" : "查看这个字的到达路径"),
-  );
+  card.setAttribute("aria-label", "查看字典释义");
   card.append(glyphImage(index));
   if (showPersonalMeanings) {
     card.classList.add("shows-personal-meaning");
@@ -967,13 +1008,6 @@ function sortByPathLength(indexes) {
   ));
 }
 
-function filterIndexes(filter) {
-  if (filter === "direct") return sortByPathLength(entries.flatMap((item, index) => item.direct ? [index] : []));
-  if (filter === "dictionary") return sortByPathLength(entries.flatMap((item, index) => !item.direct && !item.builtin_only ? [index] : []));
-  if (filter === "builtin") return sortByPathLength(entries.flatMap((item, index) => item.builtin_only ? [index] : []));
-  return sortByPathLength(entries.map((_, index) => index));
-}
-
 function renderHome() {
   const shell = document.createElement("section");
   shell.className = "page-shell";
@@ -982,55 +1016,11 @@ function renderHome() {
   heading.className = "home-heading";
   heading.innerHTML = `
     <div>
-      <p class="eyebrow">字形一览</p>
-      <h1>正式版字典</h1>
-      <p class="summary">共 ${data.count} 个字，包含游戏内置字典词条。已有路线的字按点击次数排列，其余词条列在后面。</p>
+      <h1>游戏内字典</h1>
+      <p class="summary">共 ${data.count} 个字形。点开部首查看字形，同一个字可以出现在多个分类里。</p>
     </div>`;
-
-  const toolbar = document.createElement("div");
-  toolbar.className = "toolbar";
-  const componentButton = button("按部件找字", "utility-button", () => navigate({
-    view: "components",
-    atoms: [],
-    showSingleNumerals: false,
-    excludeOtherAtoms: false,
-  }));
-  const saveControls = document.createElement("div");
-  saveControls.className = "save-controls";
-  const importButton = button("导入存档", "utility-button save-import-button", chooseSaveFile);
-  importButton.title = "存档路径参考：C:\\Users\\<你的用户名>\\AppData\\LocalLow\\Artless Games\\MessageFromAliens\\alienmessage1.sav（槽位 2/3 对应 alienmessage2.sav、alienmessage3.sav）";
-  const visibilityOption = document.createElement("label");
-  visibilityOption.className = "toggle-option personal-visibility-toggle";
-  const visibilityCheckbox = document.createElement("input");
-  visibilityCheckbox.type = "checkbox";
-  visibilityCheckbox.checked = showPersonalMeanings;
-  visibilityCheckbox.addEventListener("change", () => {
-    showPersonalMeanings = visibilityCheckbox.checked;
-    const persisted = persistPersonalState();
-    if (!persisted) saveImportStatus = { kind: "warning", text: "浏览器未允许保存显示设置。" };
-    render();
-  });
-  const visibilityText = document.createElement("span");
-  visibilityText.textContent = "显示个人释义";
-  visibilityOption.append(visibilityCheckbox, visibilityText);
-  saveControls.append(importButton, visibilityOption);
-  const filters = document.createElement("div");
-  filters.className = "filter-group";
-  filters.setAttribute("aria-label", "字形范围");
-  const choices = [
-    ["all", `全部 ${data.count}`],
-    ["direct", `直接可达 ${data.direct_count}`],
-    ["dictionary", `由字典可达 ${data.dictionary_count}`],
-    ["builtin", `内置字典收录 ${data.builtin_count}`],
-  ];
-  for (const [value, label] of choices) {
-    const control = button(label, "filter-button", () => replaceCurrent({ filter: value, scrollY: 0 }));
-    control.setAttribute("aria-pressed", String(currentState.filter === value));
-    filters.append(control);
-  }
-  toolbar.append(makeNotWordKey(), makeStartupOnlyKey(), filters);
-  heading.append(toolbar);
   shell.append(heading);
+
   if (activeSave()) {
     const progressCard = document.createElement("div");
     progressCard.className = "save-progress";
@@ -1049,10 +1039,77 @@ function renderHome() {
     progressCard.append(progressText, progress, undecipheredToggle);
     shell.append(progressCard);
   }
-  const visibleIndexes = filterIndexes(currentState.filter).filter((index) => (
-    !currentState.undecipheredOnly || !isDecipheredIndex(index)
-  ));
-  shell.append(makeGlyphGrid(visibleIndexes));
+  const covered = new Set(data.dictionary_categories.flatMap(({ header, members }) => [header, ...members]));
+  const other = entries.flatMap((_, index) => covered.has(index) ? [] : [index]);
+  const categories = [...data.dictionary_categories, { header: null, members: other }];
+  const openCategories = new Set(currentState.openCategories);
+  const list = document.createElement("div");
+  list.className = "radical-groups";
+
+  categories.forEach(({ header, members }, position) => {
+    const indexes = currentState.undecipheredOnly
+      ? members.filter((index) => !isDecipheredIndex(index))
+      : members;
+    const showHeader = header !== null && (!currentState.undecipheredOnly || !isDecipheredIndex(header));
+    if (!indexes.length && !showHeader) return;
+
+    const group = document.createElement("details");
+    group.className = "radical-group";
+    group.open = openCategories.has(position);
+    const summary = document.createElement("summary");
+    summary.className = "radical-summary";
+    if (header === null) {
+      summary.append("其他字形");
+    } else {
+      const label = document.createElement("span");
+      label.className = "visually-hidden";
+      label.textContent = `第 ${position + 1} 个部首`;
+      summary.append(glyphImage(header), label);
+    }
+    const count = document.createElement("span");
+    count.className = "radical-count";
+    count.textContent = `${indexes.length} 个字形`;
+    summary.append(count);
+    group.append(summary);
+
+    function populateGroup() {
+      if (group.childElementCount > 1) return;
+      const content = document.createElement("div");
+      content.className = "radical-content";
+      if (showHeader) {
+        content.append(button("查看部首释义", "clear-button", () => navigate({ view: "detail", index: header })));
+      } else if (header === null) {
+        const keys = document.createElement("div");
+        keys.className = "result-keys";
+        keys.append(makeNotWordKey(), makeStartupOnlyKey());
+        content.append(keys);
+      }
+      if (indexes.length) content.append(makeGlyphGrid(indexes));
+      group.append(content);
+    }
+
+    if (group.open) populateGroup();
+    group.addEventListener("toggle", () => {
+      if (!group.isConnected) return;
+      if (group.open) {
+        populateGroup();
+        openCategories.add(position);
+      } else {
+        openCategories.delete(position);
+      }
+      replaceCurrent({ openCategories: [...openCategories] }, false);
+    });
+    list.append(group);
+  });
+
+  if (list.childElementCount) {
+    shell.append(list);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "没有未破译的字形。";
+    shell.append(empty);
+  }
   app.replaceChildren(shell);
 }
 
@@ -1859,18 +1916,11 @@ function makeOccurrencesPanel(item) {
 
 function renderDetail() {
   const item = entries[currentState.index];
-  const path = item.path;
   const shell = document.createElement("section");
   shell.className = "page-shell detail-shell";
 
-  const titleRow = document.createElement("div");
-  titleRow.className = "detail-title-row";
-  titleRow.innerHTML = `
-    <div>
-      <p class="eyebrow">到达路线</p>
-      <h1>${path ? "这个字怎么找到" : "单字字典"}</h1>
-    </div>
-    <div class="path-length">${path ? `路径长度：<strong>${item.path_length}</strong> 次点击` : "内置字典收录"}</div>`;
+  const title = document.createElement("h1");
+  title.textContent = "单字字典";
 
   const hero = document.createElement("section");
   hero.className = "detail-hero";
@@ -1931,30 +1981,7 @@ function renderDetail() {
   if (compareSaves) heroText.append(makeEntryColorControl(currentState.index));
   hero.append(targetDisplay, heroText);
 
-  const panel = document.createElement("section");
-  panel.className = "path-panel";
-  const legend = document.createElement("div");
-  legend.className = "legend";
-  legend.innerHTML = `
-    <span>底色表示这一步操作：</span>
-    <span class="legend-item left"><i class="legend-dot"></i>左键点击</span>
-    <span class="legend-item right"><i class="legend-dot"></i>右键点击</span>`;
-
-  if (path) {
-    const flow = makePathFlow(path, path.dictionary_chain);
-
-  const done = document.createElement("div");
-  done.className = "completion-note";
-  done.textContent = "到达目标字的字典页";
-    panel.append(legend, flow, done);
-  } else {
-    const note = document.createElement("p");
-    note.className = "completion-note";
-    note.textContent = "游戏内置字典中存在这个词条，目前没有可展示的页面到达路线。";
-    panel.append(note);
-  }
-  shell.append(titleRow, hero);
-  shell.append(panel, makeOccurrencesPanel(item));
+  shell.append(title, hero, makeOccurrencesPanel(item));
   app.replaceChildren(shell);
 }
 
@@ -1969,23 +1996,35 @@ function render() {
   const desiredScroll = currentState.scrollY ?? 0;
   requestAnimationFrame(() => window.scrollTo(0, desiredScroll));
   live.textContent = currentState.view === "detail"
-    ? "已打开这个字的路径"
+    ? "已打开单字字典"
     : currentState.view === "components"
       ? "已打开部件查询"
       : currentState.view === "meanings"
         ? "已打开释义查询"
         : currentState.view === "writer"
           ? "已打开外星写作"
-          : "已返回字形一览";
+          : "已返回游戏内字典";
 }
 
 document.querySelector("[data-action='home']").addEventListener("click", goHome);
+document.addEventListener("click", (event) => {
+  const dropdown = topActions.querySelector(".nav-dropdown[open]");
+  if (dropdown && !dropdown.contains(event.target)) dropdown.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const dropdown = topActions.querySelector(".nav-dropdown[open]");
+  if (dropdown) {
+    dropdown.open = false;
+    dropdown.querySelector("summary").focus();
+  }
+});
 window.addEventListener("popstate", (event) => {
   currentState = normalizedState(event.state);
   render();
 });
 
-fetch("data/app-data.json?v=14890dcb672c")
+fetch("data/app-data.json?v=82fe2419b1f7")
   .then((response) => {
     if (!response.ok) throw new Error("字典数据无法读取");
     return response.json();
@@ -1998,6 +2037,7 @@ fetch("data/app-data.json?v=14890dcb672c")
       || !Array.isArray(loaded.save_key_tokens)
       || loaded.save_key_tokens.length !== loaded.count
       || !Array.isArray(loaded.atom_variants)
+      || !Array.isArray(loaded.dictionary_categories)
       || !Array.isArray(loaded.occurrence_sentences)
       || loaded.occurrence_sentences.some((record) => !Array.isArray(record.sources) || record.sources.length === 0)
       || loaded.entries.some((entry) => !Array.isArray(entry.occurrences))
