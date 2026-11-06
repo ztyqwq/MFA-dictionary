@@ -11,8 +11,6 @@
   --accent-soft: #e2edf3;
   --left-bg: #f5dadd;
   --left-fg: #912f38;
-  --right-bg: #d8e9f7;
-  --right-fg: #245a7a;
   --not-word-bg: #fff0b8;
   --not-word-fg: #775500;
   --not-word-border: #d5aa2e;
@@ -22,7 +20,6 @@
   --comparison-exact: #e4f4e7;
   --comparison-similar: #fff4c8;
   --comparison-different: #fbe4e4;
-  --start-bg: #e8ebf0;
   --shadow: 0 12px 36px rgba(29, 46, 72, 0.08);
   font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
   font-size: 16px;
@@ -116,13 +113,11 @@ button:focus-visible,
   position: relative;
 }
 
-.nav-dropdown > summary,
-.radical-summary {
+.nav-dropdown > summary {
   list-style: none;
 }
 
-.nav-dropdown > summary::-webkit-details-marker,
-.radical-summary::-webkit-details-marker {
+.nav-dropdown > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -201,7 +196,7 @@ button:focus-visible,
 
 .nav-button[aria-pressed="true"],
 .nav-button[data-active="true"],
-.nav-dropdown[open] > summary {
+.nav-dropdown[open]:not([data-group="settings"]) > summary {
   border-color: var(--accent);
   color: white;
   background: var(--accent);
@@ -729,61 +724,53 @@ button:focus-visible,
   margin-bottom: 1.2rem;
 }
 
-.radical-groups {
+.radical-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.3rem, 1fr));
+  max-width: 39rem;
   gap: 0.55rem;
 }
 
-.radical-group {
-  border: 1px solid var(--line);
-  border-radius: 0.85rem;
+.radical-tile {
+  display: grid;
+  aspect-ratio: 1;
+  align-content: center;
+  justify-items: center;
+  gap: 0.15rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.55rem;
+  padding: 0.35rem;
+  color: var(--ink);
   background: var(--panel);
-}
-
-.radical-summary {
-  display: flex;
-  min-height: 3.2rem;
-  align-items: center;
-  gap: 0.8rem;
-  border-radius: inherit;
-  padding: 0.55rem 1rem;
-  font-weight: 700;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-.radical-summary:hover,
-.radical-group[open] > summary {
+.radical-tile:hover {
+  border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.radical-summary .glyph-image {
-  width: 2rem;
-  height: 2rem;
-}
-
-.radical-summary::after {
-  width: 0.48rem;
-  height: 0.48rem;
-  flex: 0 0 auto;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(-0.15rem) rotate(45deg);
-  content: "";
-}
-
-.radical-group[open] > summary::after {
-  transform: translateY(0.15rem) rotate(225deg);
+.radical-tile .glyph-image,
+.radical-title .glyph-image {
+  width: 2.45rem;
+  height: 2.45rem;
 }
 
 .radical-count {
-  margin-left: auto;
   color: var(--muted);
-  font-size: 0.87rem;
-  font-weight: 500;
+  font-size: 0.78rem;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
-.radical-content {
-  padding: 0.75rem;
+.radical-toolbar {
+  justify-content: flex-start;
+}
+
+.radical-title {
+  margin: 0;
+  font-size: 1.1rem;
 }
 
 .radical-content .glyph-grid {
@@ -1428,48 +1415,22 @@ h2 {
   gap: 0.65rem;
 }
 
-.path-instruction-note {
-  flex-basis: 100%;
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 400;
-  line-height: 1.65;
-}
-
 .path-arrow {
   color: #8995a7;
   font-size: 1.25rem;
   line-height: 1;
 }
 
-.path-chip {
-  display: inline-flex;
-  min-height: 3.45rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  border: 1px solid transparent;
-  border-radius: 0.78rem;
-  padding: 0.55rem 0.72rem;
-  font-weight: 750;
-}
-
-.path-chip.start {
-  border-color: var(--line-strong);
+.path-start,
+.path-step {
   color: var(--ink);
-  background: var(--start-bg);
+  font-weight: 700;
 }
 
-.path-chip.left {
-  border-color: rgba(145, 47, 56, 0.25);
-  color: var(--left-fg);
-  background: var(--left-bg);
-}
-
-.path-chip.right {
-  border-color: rgba(36, 90, 122, 0.25);
-  color: var(--right-fg);
-  background: var(--right-bg);
+.path-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 .mini-glyph {

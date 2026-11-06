@@ -689,7 +689,7 @@ function chooseSaveFile() {
 function defaultState() {
   return {
     view: "home",
-    openCategories: [],
+    category: null,
     undecipheredOnly: false,
     atoms: [],
     showSingleNumerals: false,
@@ -734,11 +734,9 @@ function normalizedState(raw) {
   }
   return {
     view: "home",
-    openCategories: Array.isArray(state.openCategories)
-      ? state.openCategories.filter((index) => (
-        Number.isInteger(index) && index >= 0 && index <= data.dictionary_categories.length
-      ))
-      : [],
+    category: Number.isInteger(state.category) && state.category >= 0 && state.category <= data.dictionary_categories.length
+      ? state.category
+      : null,
     undecipheredOnly: state.undecipheredOnly === true && saveProfiles.length > 0,
     scrollY,
     depth,
@@ -770,12 +768,15 @@ function goBack() {
 }
 
 function goHome() {
-  if (currentState?.view === "home") {
+  if (currentState?.view === "home" && currentState.category === null) {
     window.scrollTo({ top: 0, behavior: "smooth" });
     replaceCurrent({ scrollY: 0 }, false);
     return;
   }
-  navigate({ view: "home" });
+  navigate({
+    view: "home",
+    undecipheredOnly: currentState?.view === "home" && currentState.undecipheredOnly,
+  });
 }
 
 function goComponents() {
@@ -805,6 +806,7 @@ function addNavigationIcon(control, icon) {
 function navigationGroup(label, icon, controls, active = false) {
   const dropdown = document.createElement("details");
   dropdown.className = "nav-dropdown";
+  dropdown.dataset.group = icon;
   dropdown.name = "top-navigation";
   const trigger = document.createElement("summary");
   trigger.className = "nav-button";
@@ -865,7 +867,7 @@ function renderTopActions() {
     navigationGroup("找字", "search", [dictionary, componentSearch, meaningSearch], currentState.view !== "writer" && currentState.view !== "detail"),
     writer,
     navigationGroup("存档", "save", [importButton, compare], compareSaves),
-    navigationGroup("设置", "settings", [visibility, highlight], showPersonalMeanings || highlightUndeciphered),
+    navigationGroup("设置", "settings", [visibility, highlight]),
   );
   pageNavigation.hidden = currentState.view === "home" || currentState.depth === 0;
   pageNavigation.replaceChildren();
@@ -1017,7 +1019,7 @@ function renderHome() {
   heading.innerHTML = `
     <div>
       <h1>游戏内字典</h1>
-      <p class="summary">共 ${data.count} 个字形。点开部首查看字形，同一个字可以出现在多个分类里。</p>
+      <p class="summary">共 ${data.count} 个字形。点击部首方框查看该类字形，同一个字可以出现在多个分类里。</p>
     </div>`;
   shell.append(heading);
 
@@ -1042,73 +1044,82 @@ function renderHome() {
   const covered = new Set(data.dictionary_categories.flatMap(({ header, members }) => [header, ...members]));
   const other = entries.flatMap((_, index) => covered.has(index) ? [] : [index]);
   const categories = [...data.dictionary_categories, { header: null, members: other }];
-  const openCategories = new Set(currentState.openCategories);
-  const list = document.createElement("div");
-  list.className = "radical-groups";
+  const selected = currentState.category;
+  const grid = document.createElement("div");
+  grid.className = "radical-grid";
 
   categories.forEach(({ header, members }, position) => {
+    if (selected !== null && selected !== position) return;
     const indexes = currentState.undecipheredOnly
       ? members.filter((index) => !isDecipheredIndex(index))
       : members;
     const showHeader = header !== null && (!currentState.undecipheredOnly || !isDecipheredIndex(header));
-    if (!indexes.length && !showHeader) return;
-
-    const group = document.createElement("details");
-    group.className = "radical-group";
-    group.open = openCategories.has(position);
-    const summary = document.createElement("summary");
-    summary.className = "radical-summary";
-    if (header === null) {
-      summary.append("其他字形");
-    } else {
-      const label = document.createElement("span");
-      label.className = "visually-hidden";
-      label.textContent = `第 ${position + 1} 个部首`;
-      summary.append(glyphImage(header), label);
-    }
+    const label = header === null ? "其他字形" : `第 ${position + 1} 个部首`;
     const count = document.createElement("span");
     count.className = "radical-count";
     count.textContent = `${indexes.length} 个字形`;
-    summary.append(count);
-    group.append(summary);
 
-    function populateGroup() {
-      if (group.childElementCount > 1) return;
-      const content = document.createElement("div");
-      content.className = "radical-content";
-      if (showHeader) {
-        content.append(button("查看部首释义", "clear-button", () => navigate({ view: "detail", index: header })));
-      } else if (header === null) {
+    if (selected === null) {
+      if (!indexes.length && !showHeader) return;
+      const tile = button("", "radical-tile", () => {
+        navigate({ view: "home", category: position, undecipheredOnly: currentState.undecipheredOnly });
+        document.querySelector("#radical-heading").focus({ preventScroll: true });
+      });
+      tile.setAttribute("aria-label", `${label}，${count.textContent}`);
+      tile.append(header === null ? label : glyphImage(header), count);
+      grid.append(tile);
+      return;
+    }
+
+    const content = document.createElement("section");
+    content.className = "section-card radical-content";
+    content.setAttribute("aria-labelledby", "radical-heading");
+    const toolbar = document.createElement("div");
+    toolbar.className = "section-heading radical-toolbar";
+    const back = button("← 全部部首", "clear-button", currentState.depth > 0 ? goBack : goHome);
+    const title = document.createElement("h2");
+    title.className = "radical-title";
+    title.id = "radical-heading";
+    title.tabIndex = -1;
+    if (header === null) {
+      title.textContent = label;
+    } else {
+      const name = document.createElement("span");
+      name.className = "visually-hidden";
+      name.textContent = label;
+      title.append(glyphImage(header), name);
+    }
+    toolbar.append(back, title, count);
+    if (showHeader) {
+      toolbar.append(button("查看部首释义", "clear-button", () => navigate({ view: "detail", index: header })));
+    }
+    content.append(toolbar);
+    if (indexes.length) {
+      if (header === null) {
         const keys = document.createElement("div");
         keys.className = "result-keys";
         keys.append(makeNotWordKey(), makeStartupOnlyKey());
         content.append(keys);
       }
-      if (indexes.length) content.append(makeGlyphGrid(indexes));
-      group.append(content);
+      content.append(makeGlyphGrid(indexes));
+    } else {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "该分类暂无字形可显示。";
+      content.append(empty);
     }
-
-    if (group.open) populateGroup();
-    group.addEventListener("toggle", () => {
-      if (!group.isConnected) return;
-      if (group.open) {
-        populateGroup();
-        openCategories.add(position);
-      } else {
-        openCategories.delete(position);
-      }
-      replaceCurrent({ openCategories: [...openCategories] }, false);
-    });
-    list.append(group);
+    shell.append(content);
   });
 
-  if (list.childElementCount) {
-    shell.append(list);
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "没有未破译的字形。";
-    shell.append(empty);
+  if (selected === null) {
+    if (grid.childElementCount) {
+      shell.append(grid);
+    } else {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "没有未破译的字形。";
+      shell.append(empty);
+    }
   }
   app.replaceChildren(shell);
 }
@@ -1732,55 +1743,45 @@ function makeDictionaryPanel(item) {
   return panel;
 }
 
-function chipFromParts(kind, parts) {
-  const chip = document.createElement("span");
-  chip.className = `path-chip ${kind}`;
+function makePathStep(parts) {
+  const step = document.createElement("span");
+  step.className = "path-step";
   for (const part of parts) {
     if (Object.prototype.hasOwnProperty.call(part, "glyph")) {
-      chip.append(makeMiniGlyph(part.glyph));
+      step.append(makeMiniGlyph(part.glyph));
     } else {
       const text = document.createElement("span");
       text.className = "path-text";
       text.textContent = part.text;
-      chip.append(text);
+      step.append(text);
     }
   }
-  return chip;
+  return step;
 }
 
-function makePathFlow(path, dictionaryChain = []) {
+function makePathFlow(path) {
   const flow = document.createElement("div");
   flow.className = "path-flow";
   const start = document.createElement("span");
-  start.className = "path-chip start";
+  start.className = "path-start";
   start.textContent = path.start === "startup_left" ? "启动时左页" : "右侧首页";
-  const nodes = [start];
+  flow.append(start);
+
   for (const action of path.actions) {
-    const chip = chipFromParts(action.kind === "lookup_glyph" ? "right" : "left", action.label);
-    chip.dataset.actionKind = action.kind;
-    if (action.kind === "write_note") {
-      chip.title = "在游戏里给前一个字填写有效注释，并确认保存；不是修改本网站的释义。";
+    const arrow = document.createElement("span");
+    arrow.className = "path-arrow";
+    arrow.setAttribute("aria-hidden", "true");
+    arrow.textContent = "→";
+    const step = makePathStep(action.label);
+    step.dataset.actionKind = action.kind;
+    if (action.kind === "lookup_glyph") {
+      step.title = "右键打开单字页";
+    } else if (action.kind === "write_note") {
+      step.title = "在游戏里给前一个字填写非空、非问号的注释并确认保存。";
     } else if (action.kind === "toggle_word_mark") {
-      chip.title = "点击游戏中单字页底部的这个按钮，切换后会出现目标字；若已显示目标字，可直接右键查字。";
+      step.title = "点击游戏中单字页底部的按钮切换状态。";
     }
-    nodes.push(chip);
-  }
-  for (const glyph of dictionaryChain) nodes.push(chipFromParts("right", [{ glyph }]));
-  nodes.forEach((node, index) => {
-    if (index > 0) {
-      const arrow = document.createElement("span");
-      arrow.className = "path-arrow";
-      arrow.setAttribute("aria-hidden", "true");
-      arrow.textContent = "→";
-      flow.append(arrow);
-    }
-    flow.append(node);
-  });
-  if (path.actions.some((action) => action.kind === "write_note")) {
-    const note = document.createElement("span");
-    note.className = "path-instruction-note";
-    note.textContent = "“填写注释”指在游戏中给前一个字写入非空、非问号的注释并确认，使内置字典显示相应分类；输入文字不另计点击。";
-    flow.append(note);
+    flow.append(arrow, step);
   }
   return flow;
 }
@@ -1800,19 +1801,26 @@ function makeOccurrenceSource(sourceRecord, position, total) {
   if (sourceRecord.kind === "dictionary_entry") {
     const sourceType = document.createElement("span");
     sourceType.className = "occurrence-source-type";
-    sourceType.textContent = sourceRecord.state === "marked_footer" ? "任意单字页（示例）" : "单字页";
+    sourceType.textContent = "单字页";
     source.append(sourceType, makeDictionaryGlyph(sourceRecord.entry));
     if (sourceRecord.state === "marked_footer") {
       const state = document.createElement("span");
       state.className = "occurrence-source-state";
-      state.textContent = "底部按钮切换后出现";
+      state.textContent = "在任意单字页切换底部按钮后出现，此处字形为示例。";
       source.append(state);
     }
   } else {
     const sourceType = document.createElement("span");
     sourceType.className = "occurrence-source-type";
-    sourceType.textContent = sourceRecord.kind === "right_page" ? "右侧页" : "左侧普通字典页";
-    source.append(sourceType, makePathFlow(sourceRecord));
+    sourceType.textContent = "信息页";
+    source.append(sourceType);
+    if (sourceRecord.start === "startup_left" && sourceRecord.actions.length === 0) {
+      const note = document.createElement("span");
+      note.textContent = "进入游戏时自动显示在左侧，无需点击。";
+      source.append(note);
+    } else {
+      source.append(makePathFlow(sourceRecord));
+    }
   }
   return source;
 }
@@ -1833,8 +1841,8 @@ function makeOccurrenceCard(record, sourceIndexes, targetIndex) {
   sources.hidden = true;
   let sourcesBuilt = false;
   const collapsedLabel = sourceRecords.length > 1
-    ? `显示路径（${sourceRecords.length} 个来源）`
-    : "显示路径";
+    ? `显示出处（${sourceRecords.length} 个来源）`
+    : "显示出处";
   const toggle = button("＋", "occurrence-toggle", () => {
     if (!sourcesBuilt) {
       const fragment = document.createDocumentFragment();
@@ -1847,8 +1855,8 @@ function makeOccurrenceCard(record, sourceIndexes, targetIndex) {
     const expanded = sources.hidden;
     sources.hidden = !expanded;
     toggle.setAttribute("aria-expanded", String(expanded));
-    toggle.setAttribute("aria-label", expanded ? "收起路径" : collapsedLabel);
-    toggle.title = expanded ? "收起路径" : collapsedLabel;
+    toggle.setAttribute("aria-label", expanded ? "收起出处" : collapsedLabel);
+    toggle.title = expanded ? "收起出处" : collapsedLabel;
     toggle.textContent = expanded ? "−" : "＋";
   });
   toggle.setAttribute("aria-expanded", "false");
