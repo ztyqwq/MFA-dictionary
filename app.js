@@ -1782,6 +1782,15 @@ function makePathFlow(path) {
       step.title = "点击游戏中单字页底部的按钮切换状态。";
     }
     flow.append(arrow, step);
+    if (action.condition?.geometry_riddles_cleared) {
+      const condition = document.createElement("span");
+      condition.className = "occurrence-source-state";
+      const count = action.condition.geometry_riddles_cleared;
+      condition.textContent = action.condition.advanced
+        ? `（已完成至少 ${count} 道几何谜题）`
+        : `（完成 ${count} 道几何谜题之前）`;
+      flow.append(condition);
+    }
   }
   return flow;
 }
@@ -2032,7 +2041,7 @@ window.addEventListener("popstate", (event) => {
   render();
 });
 
-fetch("data/app-data.json?v=82fe2419b1f7")
+fetch("data/app-data.json?v=4f0675496b48")
   .then((response) => {
     if (!response.ok) throw new Error("字典数据无法读取");
     return response.json();
